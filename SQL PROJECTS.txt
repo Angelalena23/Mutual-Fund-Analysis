@@ -1,0 +1,226 @@
+--To understand which categories is the best sellers amongs all, Please find the categories that generate the most sales price with status shipped on Dec 2022?--
+
+SELECT p.category,
+       ROUND (SUM (oi.sale_price)) AS total_sales
+FROM `sql-project-376612.thelook_ecommerce.order_items` oi
+JOIN `sql-project-376612.thelook_ecommerce.products` p
+ON oi.product_id = p.id
+WHERE oi.status = 'Shipped' AND
+      oi.created_at BETWEEN '2022-12-01' AND '2022-12-31'
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 3
+
+
+--Which category faced lowest % (most shrinking) in terms of order number with status shipped on Dec 2022 compared to previous month?--
+
+WITH november AS (
+SELECT
+   p.category, 
+   COUNT(*) AS num_of_orders
+FROM `sql-project-376612.thelook_ecommerce.products` p
+INNER JOIN `sql-project-376612.thelook_ecommerce.order_items` oi
+ON p.id = oi.product_id
+WHERE oi.status = 'Shipped' AND
+DATE (oi.created_at) BETWEEN '2022-11-01' AND '2022-11-30'
+GROUP BY 1
+), 
+december AS (
+SELECT p.category, 
+       COUNT(*) AS num_of_orders
+FROM `sql-project-376612.thelook_ecommerce.products` p
+INNER JOIN `sql-project-376612.thelook_ecommerce.order_items` oi
+ON p.id = oi.product_id
+WHERE oi.status = 'Shipped' AND
+DATE (oi.created_at) BETWEEN '2022-12-01' AND '2022-12-31'
+GROUP BY 1
+)
+
+SELECT d.category, 
+       ROUND((d.num_of_orders - n.num_of_orders) / n.num_of_orders * 100, 2) AS shrink_percntage
+FROM november n
+INNER JOIN december d
+ON n.category = d.category
+ORDER BY 2
+LIMIT 3
+
+
+
+--What is the best traffic source to get a session on thelook_ecommerce on Dec 2022?
+
+SELECT traffic_source,
+       COUNT (DISTINCT session_id) num_of_session
+FROM `sql-project-376612.thelook_ecommerce.events`
+WHERE DATE (created_at) BETWEEN '2022-12-01' AND '2022-12-31'
+GROUP BY 1
+ORDER BY 2 DESC
+
+
+
+--Following the request above, Sheila wants to know the top 3 user’s first traffic sources that provide the most revenue in the past 3 months (current date 01 January 2023)--
+
+WITH user_first_visit AS(
+	SELECT 
+	  e.traffic_source, 
+	  SUM(oi.sale_price * o.num_of_item) OVER(PARTITION BY e.traffic_source) AS revenue, 
+	FROM
+	  `sql-project-376612.thelook_ecommerce.events` AS e
+	JOIN
+	  `sql-project-376612.thelook_ecommerce.order_items` oi
+	ON
+	e.user_id = oi.user_id
+	JOIN
+	  `sql-project-376612.thelook_ecommerce.orders` o
+	ON
+	  oi.order_id = o.order_id
+	WHERE
+	  oi.status = 'Complete' 
+	  AND DATE (oi.shipped_at) >= DATE_SUB(date '2023-01-01', INTERVAL 3 MONTH)
+)
+
+SELECT 
+  	DISTINCT u.traffic_source, 
+  	ROUND(u.revenue,2) AS revenue
+FROM
+	user_first_visit AS u
+ORDER BY 2 DESC
+LIMIT 3
+
+
+
+--FINDING THE CATEGORIES WITH THE LOWEST BUSINESS GROWTH (REVENUE AND PROFIT) IN THE PAST 1 YEAR--
+
+-- REVENUE
+WITH year_2021 AS (
+SELECT p.category,
+       ROUND (SUM (oi.sale_price),2) AS revenue
+FROM `sql-project-376612.thelook_ecommerce.order_items` oi
+JOIN `sql-project-376612.thelook_ecommerce.products` p
+ON oi.product_id = p.id
+JOIN `sql-project-376612.thelook_ecommerce.orders` o
+ON oi.order_id = o.order_id
+WHERE o.status = 'Complete' AND
+      EXTRACT (YEAR FROM (o.created_at)) IN (2021) 
+GROUP BY 1
+
+), 
+year_2022 AS ( 
+SELECT p.category,
+       ROUND(SUM (oi.sale_price),2) AS revenue
+FROM `sql-project-376612.thelook_ecommerce.order_items` oi
+JOIN `sql-project-376612.thelook_ecommerce.products` p
+ON oi.product_id = p.id
+JOIN `sql-project-376612.thelook_ecommerce.orders` o
+ON oi.order_id = o.order_id
+WHERE o.status = 'Complete' AND
+      EXTRACT (YEAR FROM (o.created_at)) IN (2022) 
+GROUP BY 1
+)
+
+SELECT year_2021.category,
+       year_2021.revenue AS revenue_2021,
+       year_2022.revenue AS revenue_2022,
+       ROUND((year_2022.revenue - year_2021.revenue)/year_2021.revenue * 100, 2) AS revenue_growth
+FROM year_2021
+JOIN year_2022
+ON year_2021.category = year_2022.category
+GROUP BY 1,2,3
+ORDER BY 4 
+
+
+-- PROFIT
+WITH year_2021 AS (
+SELECT p.category,
+       ROUND (SUM (oi.sale_price - p.cost)) AS profit
+FROM `sql-project-376612.thelook_ecommerce.order_items` oi
+JOIN `sql-project-376612.thelook_ecommerce.products` p
+ON oi.product_id = p.id
+JOIN `sql-project-376612.thelook_ecommerce.orders` o
+ON oi.order_id = o.order_id
+WHERE o.status = 'Complete' AND
+      EXTRACT (YEAR FROM (o.created_at)) IN (2021) 
+GROUP BY 1
+),
+year_2022 AS (
+SELECT p.category,
+       ROUND (SUM (oi.sale_price - p.cost)) AS profit
+FROM `sql-project-376612.thelook_ecommerce.order_items` oi
+JOIN `sql-project-376612.thelook_ecommerce.products` p
+ON oi.product_id = p.id
+JOIN `sql-project-376612.thelook_ecommerce.orders` o
+ON oi.order_id = o.order_id
+WHERE o.status = 'Complete' AND
+      EXTRACT (YEAR FROM (o.created_at)) IN (2022) 
+GROUP BY 1
+)
+
+SELECT year_2021.category,
+       year_2021.profit AS profit_2021,
+       year_2022.profit AS profit_2022,
+       ROUND((year_2022.profit - year_2021.profit)/year_2021.profit * 100, 2) AS profit_growth
+FROM year_2021
+JOIN year_2022
+ON year_2021.category = year_2022.category
+GROUP BY 1,2,3
+ORDER BY 4 
+
+
+--TO UNDERSTAND THE CURRENT RETENTION PERFORMANCE AND PUSH NEW INITIATIVE TO BOOST RETENTION RATE--
+WITH
+orders AS (
+  SELECT *
+  FROM `sql-project-376612.thelook_ecommerce.orders`
+  WHERE EXTRACT(YEAR FROM created_at) IN (2022)
+)
+, cohort_items AS (
+  SELECT
+    user_id AS user_id
+    , MIN(DATE(DATE_TRUNC(created_at,MONTH))) AS cohort_month
+  FROM orders
+  GROUP BY 1
+)
+, user_activities AS (
+  SELECT
+    o.user_id AS user_id
+    , DATE_DIFF(
+        DATE(DATE_TRUNC(created_at,MONTH)),
+        cohort.cohort_month,
+        MONTH
+    ) AS month_number
+  FROM orders o
+  LEFT JOIN cohort_items cohort 
+  ON o.user_id = cohort.user_id
+  GROUP BY 1, 2
+)
+, cohort_size AS (
+  SELECT
+    cohort_month
+    , count(1) AS num_users
+  FROM cohort_items
+  GROUP BY 1
+  ORDER BY 1
+)
+, retention_table AS (
+  SELECT
+    c.cohort_month
+    , a.month_number
+    , COUNT(1) AS num_users
+  FROM user_activities a
+  LEFT JOIN cohort_items c
+    ON a.user_id = c.user_id
+  GROUP BY 1, 2
+)
+-- our final value: (cohort_month, size, month_number, percentage)
+SELECT
+  retention_table.cohort_month
+  , cohort_size.num_users AS cohort_size
+  , retention_table.month_number
+  , retention_table.num_users AS total_users
+  , CAST(retention_table.num_users AS decimal)/ cohort_size.num_users AS percentage
+FROM retention_table
+LEFT JOIN cohort_size
+  ON retention_table.cohort_month = cohort_size.cohort_month
+WHERE retention_table.cohort_month IS NOT NULL
+ORDER BY 1, 3
+
+
